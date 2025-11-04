@@ -1,0 +1,6 @@
+race_id,date,venue,surface_type,distance,track_condition,weather,url_jp,race_name
+202408020108,2024-01-27,TOKYO,TURF,1600,Gd,Sunny,https://db.netkeiba.com/race/202408020108/,京都
+202410010309,2024-01-20,NAKAYAMA,TURF,1200,Yld,Rain,https://db.netkeiba.com/race/202410010309/,小倉
+202406010409,2024-01-13,NAKAYAMA,TURF,1600,Gd,Cloudy,https://db.netkeiba.com/race/202406010409/,中山
+202406010107,2024-01-06,NAKAYAMA,TURF,1200,Gd,Sunny,https://db.netkeiba.com/race/202406010107/,中山
+202408010106,2024-01-06,NAKAYAMA,TURF,1200,Gd,Cloudy,https://db.netkeiba.com/race/202408010106/,京都
