@@ -1,0 +1,16 @@
+.DS_Store
+*.ipynb_checkpoints/
+__pycache__/
+.env
+*.log
+data/raw/
+outputs/
+
+.DS_Store
+*.ipynb_checkpoints/
+__pycache__/
+
+.DS_Store
+*.ipynb_checkpoints/
+__pycache__/
+
