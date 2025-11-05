@@ -10,7 +10,10 @@ outputs/
 *.ipynb_checkpoints/
 __pycache__/
 
+<<<<<<< HEAD
 .DS_Store
 *.ipynb_checkpoints/
 __pycache__/
 
+=======
+>>>>>>> chore: ignore macOS .DS_Store and cache files
