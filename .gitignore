@@ -1,19 +1,15 @@
+# macOS / editors
 .DS_Store
+*.swp
+*.swo
+
+# notebooks / caches / venv
 *.ipynb_checkpoints/
 __pycache__/
+*.pyc
 .env
-*.log
+
+# large data / artifacts (必要に応じて調整)
 data/raw/
 outputs/
-
-.DS_Store
-*.ipynb_checkpoints/
-__pycache__/
-
-<<<<<<< HEAD
-.DS_Store
-*.ipynb_checkpoints/
-__pycache__/
-
-=======
->>>>>>> chore: ignore macOS .DS_Store and cache files
+logs/
