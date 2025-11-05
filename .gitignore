@@ -12,4 +12,4 @@ __pycache__/
 # large data / artifacts (必要に応じて調整)
 data/raw/
 outputs/
-logs/
+logs/data/raw/
