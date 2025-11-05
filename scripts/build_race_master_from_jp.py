@@ -3,14 +3,21 @@
 JPレース一覧（race_list）を主ソースにマスター生成。
 一覧が0件のときは race_id を拾って JP詳細ページでフォールバック取得。
 出力:
-- data/raw/race_master_jp_YYYYMM.csv  (JP原本)
-- data/raw/race_master.csv            (英語整形 + upsert)
+- data/raw/race_master_jp_YYYYMM.csv  (JP原本・月次)
+- data/raw/race_master.csv            (英語整形 + upsert、統合)
+
+対象条件（厳密フィルタ）:
+- 芝（surface_jp == "芝"）
+- 距離 1000〜1700m
+- 年齢：2歳 or 3歳（"以上"は除外）
+- クラス：1勝 or 2勝
 """
 
 from __future__ import annotations
 import re
 import time
 from pathlib import Path
+from typing import Optional, List
 
 import pandas as pd
 import requests
@@ -29,8 +36,8 @@ LIST_URL_TMPL = (
     "&end_year={year}&end_mon={mon}"
     "&jyo[]=01&jyo[]=02&jyo[]=03&jyo[]=04&jyo[]=05"
     "&jyo[]=06&jyo[]=07&jyo[]=08&jyo[]=09&jyo[]=10"
-    "&barei[]=11&barei[]=12"
-    "&grade[]=6&grade[]=7"
+    "&barei[]=11&barei[]=12"  # 2歳=11, 3歳=12（※サイトの検索パラメータ）
+    "&grade[]=6&grade[]=7"    # 1勝=6, 2勝=7
     "&kyori_min={dmin}&kyori_max={dmax}"
     "&sort=date"
     "&list=100"
@@ -66,6 +73,12 @@ VENUE_RE = re.compile(r"(札幌|函館|福島|新潟|東京|中山|中京|京都
 SURFACE_RE = re.compile(r"(芝|ダ|ダート)[^\d]{0,5}(\d{3,4})m")
 TRACK_COND_RE = re.compile(r"(良|稍重|重|不良)")
 WEATHER_RE = re.compile(r"(天候[:：]?\s*)?(晴れ?|曇り?|雨|小雨|雪|小雪)")
+
+# 年齢（2/3歳のみ、"以上"は除外）
+AGE_EXACT_RE = re.compile(r'(?<!\d)([23])歳(?!以上)')
+AGE_OR_OLDER_RE = re.compile(r'([2-9])歳以上')  # 除外検知用
+# クラス（1勝/2勝）
+CLASS_RE = re.compile(r'([12])勝(?:クラス)?')
 
 # ========= HTTPセッション =========
 _session = None
@@ -114,6 +127,19 @@ def fetch(url, sleep=0.2, timeout=20, referer=None):
     resp.encoding = resp.apparent_encoding or "utf-8"
     return resp.text
 
+# ========= 共通: 厳密フィルタ =========
+def _apply_strict_filter(df: pd.DataFrame) -> pd.DataFrame:
+    """芝/距離/年齢(2or3歳)/クラス(1勝or2勝) で厳密に絞る。欠損は除外。"""
+    if df.empty:
+        return df
+    mask = (
+        df["surface_jp"].isin(["芝"]) &
+        df["distance"].between(1000, 1700, inclusive="both") &
+        df["age_exact"].isin([2, 3]) &
+        df["race_class_jp"].isin(["1勝", "2勝"])
+    )
+    return df[mask].drop_duplicates("race_id").reset_index(drop=True)
+
 # ========= 一覧パース =========
 def parse_race_list_page(html: str) -> pd.DataFrame:
     soup = _soup(html)
@@ -144,7 +170,7 @@ def parse_race_list_page(html: str) -> pd.DataFrame:
 
         # race_id
         a = tds[1].find("a", href=True)
-        if not a: 
+        if not a:
             continue
         m3 = RID_IN_HREF_RE.search(a["href"])
         if not m3:
@@ -152,19 +178,32 @@ def parse_race_list_page(html: str) -> pd.DataFrame:
         rid = m3.group(1)
         race_name = a.get_text(strip=True)
 
-        # surface/distance/condition/weather
+        # 条件ブロック
         cond_text = tds[2].get_text(" ", strip=True)
         surface, distance, track_cond, weather = None, None, None, None
+        age_exact, race_class_jp = None, None
+
         m4 = SURFACE_RE.search(cond_text)
         if m4:
             surface = m4.group(1)
             distance = int(m4.group(2))
+
         m5 = TRACK_COND_RE.search(cond_text)
         if m5:
             track_cond = m5.group(1)
+
         m6 = WEATHER_RE.search(cond_text)
         if m6:
             weather = m6.group(2) if m6.group(2) else m6.group(0)
+
+        # 年齢（2/3歳のみ、"以上"は除外）
+        if AGE_EXACT_RE.search(cond_text) and not AGE_OR_OLDER_RE.search(cond_text):
+            age_exact = int(AGE_EXACT_RE.search(cond_text).group(1))
+
+        # クラス（1勝/2勝）
+        mc = CLASS_RE.search(cond_text)
+        if mc:
+            race_class_jp = f"{mc.group(1)}勝"
 
         rows.append({
             "race_id": rid,
@@ -174,10 +213,16 @@ def parse_race_list_page(html: str) -> pd.DataFrame:
             "distance": distance,
             "track_condition_jp": track_cond,
             "weather_jp": weather,
+            "age_exact": age_exact,
+            "race_class_jp": race_class_jp,
             "url_jp": f"https://db.netkeiba.com/race/{rid}/",
             "race_name": race_name,
         })
-    return pd.DataFrame(rows)
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+    return _apply_strict_filter(df)
 
 # ========= JP詳細ページ（フォールバック用） =========
 def parse_jp_detail_by_rid(race_id: str) -> dict:
@@ -219,6 +264,17 @@ def parse_jp_detail_by_rid(race_id: str) -> dict:
     if m5:
         track_cond = m5.group(1)
 
+    # 年齢（2/3歳のみ、"以上"は除外）
+    age_exact = None
+    if AGE_EXACT_RE.search(text) and not AGE_OR_OLDER_RE.search(text):
+        age_exact = int(AGE_EXACT_RE.search(text).group(1))
+
+    # クラス（1勝/2勝）
+    race_class_jp = None
+    mc = CLASS_RE.search(text)
+    if mc:
+        race_class_jp = f"{mc.group(1)}勝"
+
     # race_name（任意）
     race_name = None
     a = soup.select_one('a[href*="/race/{}/"]'.format(race_id))
@@ -233,6 +289,8 @@ def parse_jp_detail_by_rid(race_id: str) -> dict:
         "distance": distance,
         "track_condition_jp": track_cond,
         "weather_jp": weather,
+        "age_exact": age_exact,
+        "race_class_jp": race_class_jp,
         "url_jp": url,
         "race_name": race_name,
     }
@@ -247,7 +305,10 @@ def fallback_from_list_html(html: str) -> pd.DataFrame:
             rows.append(parse_jp_detail_by_rid(rid))
         except Exception as e:
             print(f"[FALLBACK ERR] {rid}: {e}")
-    return pd.DataFrame(rows)
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+    return _apply_strict_filter(df)
 
 # ========= 変換 / マージ =========
 def normalize_to_en(df: pd.DataFrame) -> pd.DataFrame:
@@ -278,8 +339,8 @@ def merge_num_horses(df: pd.DataFrame) -> pd.DataFrame:
         df["num_horses"] = None
     return df
 
-# ========= メイン =========
-def build_race_master_jp(year: int, mon: int, track: int = 1, dmin: int = 1000, dmax: int = 1700):
+# ========= 月次ビルド =========
+def build_race_master_jp(year: int, mon: int, track: int = 1, dmin: int = 1000, dmax: int = 1700) -> pd.DataFrame:
     url = LIST_URL_TMPL.format(year=year, mon=mon, track=track, dmin=dmin, dmax=dmax)
     print("[GET]", url)
     html = fetch(url, referer="https://db.netkeiba.com/?pid=race_top")
@@ -291,7 +352,6 @@ def build_race_master_jp(year: int, mon: int, track: int = 1, dmin: int = 1000, 
         df = fallback_from_list_html(html)
 
     if df.empty:
-        # それでも空ならデバッグHTMLを確認
         dbg = OUT_DIR / "debug_race_list_latest.html"
         with open(dbg, "w", encoding="utf-8") as f:
             f.write(html)
@@ -302,13 +362,67 @@ def build_race_master_jp(year: int, mon: int, track: int = 1, dmin: int = 1000, 
     print(f"[JP] wrote {out_path} ({len(df)} rows)")
     return df
 
-def main(year=2024, mon=1, track=1, dmin=1000, dmax=1700):
-    jp_df = build_race_master_jp(year, mon, track, dmin, dmax)
+# ========= 英語整形（列セット統一） =========
+_EN_COLS = ["race_id","date","venue","surface_type","distance","weather","track_condition","num_horses","url_jp"]
+
+def to_en_view(jp_df: pd.DataFrame) -> pd.DataFrame:
     jp_df = merge_num_horses(jp_df)
     en_df = normalize_to_en(jp_df)
-    cols = ["race_id","date","venue","surface_type","distance","weather","track_condition","num_horses","url_jp"]
-    en_df = en_df.reindex(columns=cols)
+    en_df = en_df.reindex(columns=_EN_COLS)
+    return en_df
 
+# ========= バッチ実行（年範囲 × 月範囲） =========
+def run_batch(
+    year_from: int,
+    year_to: int,
+    months: Optional[List[int]] = None,
+    track: int = 1,
+    dmin: int = 1000,
+    dmax: int = 1700,
+    resume: bool = True,            # 既存CSVがあればスキップ
+    write_master_each: bool = False # 月ごとに英語マスターへupsertするか（Falseなら最後に一括）
+):
+    if months is None:
+        months = list(range(1, 12 + 1))
+
+    en_frames = []  # 一括upsert用
+
+    for y in range(year_from, year_to + 1):
+        for m in months:
+            jp_csv = OUT_DIR / f"race_master_jp_{y}{m:02d}.csv"
+            if resume and jp_csv.exists() and jp_csv.stat().st_size > 100:
+                print(f"[SKIP] {jp_csv.name} already exists")
+                # 再利用して英語化
+                try:
+                    jp_df = pd.read_csv(jp_csv, dtype={"race_id": str})
+                    # 念のため、厳密フィルタをもう一度適用（過去のCSVに混入があれば除去）
+                    required_cols = {"surface_jp","distance","age_exact","race_class_jp"}
+                    if required_cols.issubset(set(jp_df.columns)):
+                        jp_df = _apply_strict_filter(jp_df)
+                    en_df = to_en_view(jp_df)
+                    if write_master_each:
+                        _upsert_master(en_df)
+                    else:
+                        en_frames.append(en_df)
+                except Exception as e:
+                    print(f"[WARN] failed to reuse {jp_csv.name}: {e}")
+                continue
+
+            try:
+                jp_df = build_race_master_jp(y, m, track, dmin, dmax)
+                en_df = to_en_view(jp_df)
+                if write_master_each:
+                    _upsert_master(en_df)
+                else:
+                    en_frames.append(en_df)
+            except Exception as e:
+                print(f"[ERROR] {y}-{m:02d}: {e}")
+
+    if not write_master_each and en_frames:
+        new_en = pd.concat(en_frames, ignore_index=True, sort=False)
+        _upsert_master(new_en)
+
+def _upsert_master(en_df: pd.DataFrame):
     master_csv = OUT_DIR / "race_master.csv"
     if master_csv.exists():
         old = pd.read_csv(master_csv, dtype={"race_id": str})
@@ -319,5 +433,28 @@ def main(year=2024, mon=1, track=1, dmin=1000, dmax=1700):
     merged.to_csv(master_csv, index=False)
     print("[EN] upsert -> %s (%d rows)" % (master_csv, len(merged)))
 
+# ========= 互換 main（単月実行） =========
+def main(year=2024, mon=1, track=1, dmin=1000, dmax=1700):
+    jp_df = build_race_master_jp(year, mon, track, dmin, dmax)
+    en_df = to_en_view(jp_df)
+    _upsert_master(en_df)
+
+# ========= エントリポイント =========
 if __name__ == "__main__":
-    main(year=2024, mon=1, track=1, dmin=1000, dmax=1700)
+    # 使い方例:
+    # 1) 2024年 全月（逐次upsert: True だと途中停止でも master が最新に）
+    # run_batch(2024, 2024, resume=True, write_master_each=True)
+    #
+    # 2) 2022〜2024年（3年分）を一括upsertで更新
+    # run_batch(2022, 2024, resume=True, write_master_each=False)
+    #
+    # デフォルト: 2024年 全月、一括upsert（既存JPは再利用）
+    run_batch(
+        year_from=2024,
+        year_to=2024,
+        months=None,           # None=1..12
+        track=1,               # 芝
+        dmin=1000, dmax=1700,
+        resume=True,           # 既存JP CSVはスキップして再利用
+        write_master_each=False
+    )
