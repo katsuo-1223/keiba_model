@@ -113,3 +113,60 @@
 * ENサイトURL例：`https://en.netkeiba.com/db/race/202406010107/`
 * 出力ファイルはBOM付きUTF-8(`utf-8-sig`)を推奨（Excel開封時の文字化け回避）
 * ENサイトとJPサイトを統一ID(`race_id`)で結合可能な設計を維持
+
+了解！次回スムーズに再開できるように、**メモ**と**Git反映（ブランチ切り忘れ時の安全手順）**をまとめます。
+
+---
+
+# メモ（2025-11-09）
+
+## 状況
+
+* 2024年・芝1000–1700m・約50レースの**結合データ**まで整備済み
+* 取得は **EN版スクレイパー v6（列ズレ対策・EN専用）**
+* 事前検証・EDA用に以下を整備
+
+  * `scripts/validate_merged_dataset.py`（品質ゲート）
+  * `scripts/eda_quick_summary.py`（人気×距離・ROIなどの基礎集計）
+
+## 次回やること（優先順）
+
+1. `build_train_dataset.py` を作成（学習用テーブル出力: `data/processed/train_data.csv`）
+
+   * 目的変数：`win_flag = (FP==1)`
+   * 特徴量例：`distance_m, popularity, odds, last3f_num, horse_weight_kg, PP, weight(斤量), sex, age` などを整形
+2. **データ分割**（レース単位：train≈70%、valid≈30%）
+3. `train_lightgbm_roi.py`（勝率予測 → `win_prob` 出力）
+4. `evaluate_roi.py`（`EV = win_prob × odds`、EV>1.0 の閾値別ROI集計）
+
+## 実行順（再現手順）
+
+```bash
+# 品質チェック（OKなら前進）
+python scripts/validate_merged_dataset.py
+
+# EDA（成果物: CSV/PNG）
+python scripts/eda_quick_summary.py
+```
+
+---
+## 2025-11-09
+
+**Done**
+
+* ENスクレイパー v6（ヘッダベース・列ズレ耐性・EN専用）に刷新
+* データ品質ゲート `validate_merged_dataset.py` 作成
+* 基礎EDA `eda_quick_summary.py` 作成（人気×距離×ROI）
+
+**Next**
+
+* `build_train_dataset.py` で学習表作成（勝率モデル用）
+* 2024年データを train/valid に分割（レース単位）
+* `train_lightgbm_roi.py` → `evaluate_roi.py` で EV>1.0 のROI検証
+
+**Notes**
+
+* `roi_pct = total_ret / total_bet * 100`（単勝100円想定）
+* ENサイトのみ運用。JP解析コードは削除済み（v6）
+
+---
