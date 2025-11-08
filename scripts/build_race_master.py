@@ -37,7 +37,7 @@ WEATHER_MAP = {
 }
 
 # 出力列（英語ビューの最小セット）
-EN_COLS = ["race_id","date","venue","surface_type","distance","weather","track_condition","num_horses","url_jp"]
+EN_COLS = ["race_id","date","venue","surface_type","distance","weather","track_condition","url_jp"]
 
 def _parse_months_arg(arg: Optional[str]) -> Optional[List[int]]:
     if not arg:
@@ -122,10 +122,6 @@ def translate_master(df: pd.DataFrame) -> pd.DataFrame:
     # weather
     if "weather" in df.columns:
         df["weather"] = df["weather"].replace(WEATHER_MAP)
-
-    # num_horses が無い場合は作っておく（前段で結合しない構成でも壊れないように）
-    if "num_horses" not in df.columns:
-        df["num_horses"] = pd.NA
 
     # URL 列は名称が違うケースを吸収
     if "url_jp" not in df.columns:
