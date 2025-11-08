@@ -76,3 +76,40 @@
 * Netkeiba側DOM変更時も詳細フォールバックで取得継続
 * `data/raw/` は `.gitignore` 対象のまま維持（軽量リポジトリ運用）
 
+以下を追記すればOKです👇
+(`docs/progress.md` の末尾にコピペしてください)
+
+---
+
+## 2025-11-08
+
+**Done**
+
+* `scrape_race_results.py` を全面リファクタリング
+
+  * **v4へ更新**：英語版Netkeiba（`https://en.netkeiba.com`）対応
+  * `--site en|jp` オプションを追加し、英語・日本語いずれからもスクレイピング可能に
+  * `from-list` 指定時、**JP/EN両形式のURLまたは12桁race_id**を全カラムから自動抽出
+  * HTMLエンコーディング検出・正規化（UTF-8, cp932, euc-jp対応）で**文字化けを解消**
+  * 出力CSVの文字コード指定（`--encoding utf-8-sig` デフォルト）に対応
+  * `FP`を**馬番(3列目)**として取得し、`num_horses = max(FP)` と整合性を確保
+  * 取得対象が空の場合は**自動フォールバック（JPリスト検索）**で補完
+* `race_urls_2024.csv`（JP形式）からでもENサイト経由で結果取得可能に
+* 将来の3年分など長期間スクレイピングにも対応（`--year-start`, `--year-end`パラメータ）
+
+**Next**
+
+* 2024年分全レース結果を再取得し、`data/raw/race_results.csv`を再生成
+
+  * 入力：英語サイトURL（またはrace_id一覧）
+  * 出力：`--encoding utf-8-sig` でExcel互換性を確保
+* `merge_results_with_master.py` にて`race_master.csv`と結合し、
+  `data/processed/race_results_with_master.csv`を作成
+* 結合データを用いたEDA（人気・オッズ・距離・上り・馬体重の傾向分析）に着手
+
+**Notes**
+
+* `--site en`指定時は英語サイト構造（`db_h_race_results`テーブル）にも対応済み
+* ENサイトURL例：`https://en.netkeiba.com/db/race/202406010107/`
+* 出力ファイルはBOM付きUTF-8(`utf-8-sig`)を推奨（Excel開封時の文字化け回避）
+* ENサイトとJPサイトを統一ID(`race_id`)で結合可能な設計を維持
