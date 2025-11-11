@@ -1,0 +1,1 @@
+{"feature_cols":["distance","pop_win","odds_win","age","weather_Cloudy","weather_LightRain","weather_Rain","weather_Snow","weather_Sunny","weather_nan","sex_2","sex_3","sex_nan"],"target_col":"target_win","finish_source_col":"FP","n_train":331,"n_valid":159,"n_races":49}
