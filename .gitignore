@@ -11,8 +11,10 @@ __pycache__/
 
 # large data / artifacts (必要に応じて調整)
 data/raw/
+data/processed/
 outputs/
 logs/
-# processed artifacts
-data/processed/*.csv
-data/processed/*.png
+
+data/raw/kaggle/
+*.zip
+*.csv
