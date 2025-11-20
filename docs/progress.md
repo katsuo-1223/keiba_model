@@ -211,3 +211,39 @@ python scripts/eda_quick_summary.py
 * ROI重視分析への転換に伴い、「オッズ」「人気」「連対確率」「期待値(EV)」の統合指標を設計予定。
 
 ---
+
+
+## 2025-11-20
+
+**Done**
+
+* Kaggle の JRA データセット（`19860105-20210731_race_result.csv`）を解析開始
+* 必要カラムのみ抽出する軽量化スクリプト
+  `scripts/kaggle/extract_jra_race_result_light.py` を新規作成
+
+  * レースID／日付／距離／馬場／人気／オッズ／タイム（秒変換含む）など主要列を選定
+  * 日本語カラムのまま扱い、JRA形式に最適化
+* ディレクトリ構成を再整理
+
+  * `data/raw/kaggle/`, `data/processed/kaggle/` を追加
+  * 既存の Netkeiba 系コードは `netkeiba/` ディレクトリに移動
+* スクリプト実行により JRA 軽量データ
+
+  * `data/processed/kaggle/jra_race_result_light.csv`
+  * `data/processed/kaggle/jra_race_result_light.parquet`
+    を生成（Parquetはpyarrow未導入時はCSVのみ出力）
+
+**Next**
+
+* `race.csv`, `odds.csv`, `lap.csv` など Kaggle データの軽量化スクリプトを同様に作成
+* Kaggle版 EDA Notebook (`notebooks/kaggle/eda_race_result.ipynb`) を作成
+* Kaggle 10年分データを用いた基礎分析＆特徴量の整理
+* Kaggle データ版のモデル構築（LightGBM baseline）
+
+**Notes**
+
+* Parquet 出力には `pyarrow` または `fastparquet` が必要
+  → 未インストールでもCSVは出力されるよう例外処理済み
+* 形式が Netkeiba 英語版とは異なるため、Kaggle 用の前処理・EDA・学習は**完全に独立ライン**で進める
+
+---
