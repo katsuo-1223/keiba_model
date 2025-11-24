@@ -247,3 +247,75 @@ python scripts/eda_quick_summary.py
 * 形式が Netkeiba 英語版とは異なるため、Kaggle 用の前処理・EDA・学習は**完全に独立ライン**で進める
 
 ---
+
+## 2025-11-24
+
+**Done**
+
+* VS Code 上で `keiba310` 環境を Jupyter カーネルとして登録し、
+  Kaggle JRA データを Notebook でも扱える開発環境を整理
+
+* Kaggle 軽量レース結果（`train_race_result_basic.csv`）を用いた
+  LightGBM 複勝ベースライン学習スクリプトを作成・実行
+
+  * スクリプト：`scripts/kaggle/train_lgbm_place_baseline.py`
+  * レース日付で時系列分割（～2017年: train / 2018年～: valid）
+  * 目的変数：`target_place`（複勝的中フラグ）
+  * ID列＋ target列 以外を説明変数として利用
+  * LightGBM 4.x に合わせて callbacks 方式で `early_stopping` を実装
+  * Validation で AUC ≒ 0.815 を確認
+  * 出力：
+
+    * モデル：`models/kaggle/lgbm_place_baseline.txt`
+    * 予測結果：`data/processed/kaggle/lgbm_place_pred.csv`
+      （`pred_place` 列として複勝確率を出力）
+
+* 複勝オッズとの結合＆期待値計算スクリプトを作成・実行
+
+  * オッズ元データ：`data/raw/kaggle/19860105-20210731_odds.csv`
+    （レース単位の横持ち：`複勝1_馬番`／`複勝1_オッズ` …）
+  * スクリプト：`scripts/kaggle/attach_place_odds_and_value.py`
+
+    * 予測に含まれるレースID（2018年以降）のみをフィルタ
+    * 横持ちの複勝オッズを縦持ちに変換
+      → `レースID, 馬番, 複勝オッズ`
+    * `lgbm_place_pred.csv` と `レースID + 馬番` で結合
+    * 複勝オッズ（100円払戻）を倍率に変換：
+
+      * `複勝オッズ_倍率 = 複勝オッズ / 100`
+    * 期待値（Value）を計算：
+
+      * `expected_value = pred_place * 複勝オッズ_倍率`
+    * 出力：
+
+      * `data/processed/kaggle/lgbm_place_with_odds.csv`
+        （`pred_place`・`複勝オッズ_倍率`・`expected_value` 付き）
+
+**Next**
+
+* `lgbm_place_with_odds.csv` を用いて、期待値しきい値別（`expected_value >= 1.0, 1.05, 1.1` など）の
+  ベット件数・的中率・回収率（ROI）を集計するスクリプトを実装・実行
+
+  * まずは「しきい値で機械的に全頭ベット」のシンプルな戦略で検証
+* 期待値しきい値ごとの結果を見て、
+
+  * 回収率が 1.0 を超えるゾーンがあるか
+  * ベット件数とのトレードオフ（絞りすぎ vs 広げすぎ）
+    を確認し、戦略の方向性を整理
+* その後の拡張案：
+
+  * 1レースあたり最大ベット頭数の制約（例：1頭のみ、2頭まで など）
+  * 特徴量追加（馬体重増減・距離・馬場・競馬場ごとの効果をモデルに反映）
+  * LightGBM のハイパーパラメータ調整による精度向上
+
+**Notes**
+
+* LightGBM は 4.x 系のため、`early_stopping_rounds` ではなく
+  `lgb.early_stopping()`＋`lgb.log_evaluation()` の callbacks 方式で対応。
+* 期待値 `expected_value` は **「倍率ベース」**（= プラスマイナスの基準が 1.0）で定義：
+
+  * `expected_value = pred_place × 複勝オッズ_倍率`
+  * `expected_value > 1.0` なら理論上プラスの期待値。
+* オッズ CSV は 1986〜2021年分だが、予測は 2018年以降のみのため、
+  結合前に **予測側のレースIDでフィルタ** することが重要。
+
