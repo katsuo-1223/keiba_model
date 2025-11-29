@@ -1,6 +1,6 @@
-# scripts/kaggle/train_lgbm_place_baseline.py
+# scripts/kaggle/train_lgbm_win_baseline.py
 """
-Kaggle JRA データを用いた LightGBM ベースライン（複勝予測）学習スクリプト。
+Kaggle JRA データを用いた LightGBM ベースライン（単勝予測）学習スクリプト。
 
 - 入力: data/processed/kaggle/train_race_result_basic.csv
     - 先頭に ID 情報:
@@ -10,8 +10,8 @@ Kaggle JRA データを用いた LightGBM ベースライン（複勝予測）�
     - それ以外の列を特徴量として使用（数値＋one-hot 済み列を想定）
 
 - 出力:
-    - models/kaggle/lgbm_place_baseline.txt      : 学習済みモデル
-    - data/processed/kaggle/lgbm_place_pred.csv : 検証期間での予測結果＋ID＋目的変数
+    - models/kaggle/lgbm_win_baseline.txt      : 学習済みモデル
+    - data/processed/kaggle/lgbm_win_pred.csv : 検証期間での予測結果＋ID＋目的変数
     - 学習・検証の AUC / logloss を標準出力
 
 ※ 事前に以下をインストールしておくこと:
@@ -20,7 +20,6 @@ Kaggle JRA データを用いた LightGBM ベースライン（複勝予測）�
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import List, Tuple
 
@@ -33,7 +32,7 @@ from sklearn.metrics import roc_auc_score, log_loss
 ROOT = Path(__file__).resolve().parents[2]
 INPUT_PATH = ROOT / "data" / "processed" / "kaggle" / "train_race_result_basic.csv"
 MODEL_DIR = ROOT / "models" / "kaggle"
-PRED_PATH = ROOT / "data" / "processed" / "kaggle" / "lgbm_place_pred.csv"
+PRED_PATH = ROOT / "data" / "processed" / "kaggle" / "lgbm_win_pred.csv"
 
 
 def load_data(path: Path) -> pd.DataFrame:
@@ -56,7 +55,6 @@ def train_valid_split_by_date(
         ～2017年分      → train
         2018年以降分    → valid
     """
-    # 日付型に変換（フォーマットは自動推定）
     df = df.copy()
     df[date_col] = pd.to_datetime(df[date_col])
 
@@ -80,16 +78,29 @@ def build_feature_matrix(
 ) -> Tuple[pd.DataFrame, pd.Series]:
     """
     ID 列と目的変数列を除いたものを特徴量行列 X として返す。
-    target_place を目的変数 y に使用。
+    target_win を目的変数 y に使用。
+
+    ※ レース後にしか分からない情報（リーク列）は除外する。
     """
     missing = [c for c in id_cols + target_cols if c not in df.columns]
     if missing:
         raise KeyError(f"必要な列が見つかりません: {missing}")
 
-    feature_cols = [c for c in df.columns if c not in id_cols + target_cols]
+    # ★ レース後にしか分からない当該レース情報 → 学習から除外
+    leak_cols = [
+        "上がり3F",      # レースのラスト3Fタイム（結果）
+        "上がり順位",    # そのレース内での上がり順位（結果）
+        "通過4角",       # 4コーナー通過順（結果）
+        # 必要があれば今後、他の結果系列もここに足す
+    ]
+
+    feature_cols = [
+        c for c in df.columns
+        if c not in id_cols + target_cols + leak_cols
+    ]
 
     X = df[feature_cols].copy()
-    y = df["target_place"].astype(int)
+    y = df["target_win"].astype(int)
 
     return X, y
 
@@ -100,6 +111,13 @@ def train_lightgbm_baseline(
     X_valid,
     y_valid,
 ) -> lgb.Booster:
+    # ▼ ここを追加 ▼
+    categorical_cols = [c for c in ["騎手", "前走_クラス"] if c in X_train.columns]
+
+    for c in categorical_cols:
+        X_train[c] = X_train[c].astype("category")
+        X_valid[c] = X_valid[c].astype("category")
+
     print("[lgbm] Dataset 準備")
     train_data = lgb.Dataset(X_train, label=y_train)
     valid_data = lgb.Dataset(X_valid, label=y_valid)
@@ -119,7 +137,6 @@ def train_lightgbm_baseline(
 
     print("[lgbm] 学習開始（LightGBM 4.x callbacks版）")
 
-    # 👇 LightGBM 4.x の新しい early_stopping
     model = lgb.train(
         params=params,
         train_set=train_data,
@@ -143,6 +160,7 @@ def train_lightgbm_baseline(
 
     return model, y_pred_valid
 
+
 def save_model(model: lgb.Booster, path: Path) -> None:
     """モデルをテキスト形式で保存。"""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -161,18 +179,30 @@ def save_valid_prediction(
     検証データに対する予測値を CSV 出力。
     - ID 情報
     - 目的変数 (target_win, target_place)
-    - 予測確率 pred_place
+    - 単勝オッズ（倍率）
+    - 予測確率 pred_win
+    - 期待値 expected_value_win
     """
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    out_df = df_valid[id_cols + target_cols].copy()
-    out_df["pred_place"] = y_pred
+    base_cols = id_cols + target_cols + ["単勝"]
+
+    out_df = df_valid[base_cols].copy()
+
+    # 予測確率
+    out_df["pred_win"] = y_pred
+
+    # ★ train_race_result_basic.csv の「単勝」はすでに倍率なので、そのまま使う
+    out_df["単勝_倍率"] = out_df["単勝"]
+
+    # 期待値（1点100円購入時の期待回収倍率）
+    out_df["expected_value_win"] = out_df["pred_win"] * out_df["単勝_倍率"]
 
     out_df.to_csv(path, index=False)
     print(f"検証データの予測結果を保存しました: {path}")
 
 def main() -> None:
-    print("=== train_lgbm_place_baseline.py 実行開始 ===")
+    print("=== train_lgbm_win_baseline.py 実行開始 ===")
     print(f"[INFO] ROOT:       {ROOT}")
     print(f"[INFO] INPUT_PATH: {INPUT_PATH}")
 
@@ -185,20 +215,21 @@ def main() -> None:
         df, date_col="レース日付", split_date="2018-01-01"
     )
 
-    X_train, y_train = build_feature_matrix(df_train, id_cols=id_cols, target_cols=target_cols)
-    X_valid, y_valid = build_feature_matrix(df_valid, id_cols=id_cols, target_cols=target_cols)
+    X_train, y_train = build_feature_matrix(
+        df_train, id_cols=id_cols, target_cols=target_cols
+    )
+    X_valid, y_valid = build_feature_matrix(
+        df_valid, id_cols=id_cols, target_cols=target_cols
+    )
 
     print(f"[INFO] train X: {X_train.shape}, valid X: {X_valid.shape}")
 
-    # ⭐ ここでタプルを展開する
     model, y_pred_valid = train_lightgbm_baseline(X_train, y_train, X_valid, y_valid)
 
-    # モデル保存
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    model_path = MODEL_DIR / "lgbm_place_baseline.txt"
+    model_path = MODEL_DIR / "lgbm_win_baseline.txt"
     save_model(model, model_path)
 
-    # 検証データへの予測結果を保存（今後 ROI 計算などに使用）
     save_valid_prediction(
         df_valid=df_valid,
         y_pred=y_pred_valid,
