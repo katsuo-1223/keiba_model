@@ -359,3 +359,41 @@ python scripts/eda_quick_summary.py
 
 ---
 
+## 2025-11-29
+**Done**
+- 複勝モデル方針から「単勝モデルに一本化」へ方針変更  
+  - Kaggle データでは複勝オッズが上位数頭しか存在せず、欠損が多すぎるため  
+  - 単勝オッズは全頭揃っており、期待値分析に適していると判断
+- 競馬モデル開発用の AI 向けプロジェクト spec（憲法）を作成  
+  - プロジェクト目的 / データ構成 / パイプライン / 制約を整理  
+  - 以後の会話で一貫した仕様を共有できる状態にした
+
+**Next**
+- Kaggle 単勝モデルのベースライン実装
+- 期待値（EV）と ROI を出力する評価スクリプトの整備
+
+---
+
+## 2025-11-30
+**Done**
+- Kaggle 日本語元 CSV から `build_train_race_result_basic_with_prev.py` を再構築  
+  - 基本列に加え、以下の特徴量を追加
+    - 騎手通算成績（全体 / 距離帯 / 競馬場 / 芝ダ別）
+    - 馬の通算成績（全体 / 距離帯 / 競馬場 / 芝ダ別）
+    - 上がり3F・上がり順位・通過4角
+    - 前走着順 / 前走上がり / 前走上がり順位 / 前走通過4角 / 前走距離 / 前走クラス
+- `train_race_result_basic.csv` を再生成し、単勝モデル 1 段目 LightGBM を再学習
+- Isotonic Regression による勝率キャリブレーションを導入  
+  - `calibrate_win_prob.py` で `lgbm_win_pred_calibrated.csv` を出力
+- 1 段目出力＋オッズからメタ学習用データセット `win_meta_train.csv` を作成
+- EV 分布・オッズ別・人気別・距離×クラス×頭数別に ROI を集計  
+  - `analyze_ev_distribution.py` / `analyze_roi_by_odds_and_popularity.py` / `analyze_roi_by_segment.py` を実行  
+  - EV≥1 の割合や、セグメント別 ROI（例: 距離帯 × クラス帯 × 頭数帯）を把握
+- ディレクトリ構成を `docs/dir_structure_20251130.txt` としてエクスポート
+
+**Next**
+- EV と ROI を組み合わせて「勝ちやすいセグメント（距離×クラス×頭数×人気×オッズ）」の自動抽出ロジックを検討
+- 単勝モデル 1 段目の特徴量強化  
+  - 距離延長/短縮、クラス昇級/降級、前走タイム差などを追加する方針
+- キャリブレーション手法の比較（Isotonic / Platt scaling / アンサンブル）
+- メタモデル（2 段目）の精度改善と人気薄領域での的中率向上
