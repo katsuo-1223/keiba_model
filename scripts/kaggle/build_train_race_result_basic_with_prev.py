@@ -44,6 +44,27 @@ def load_raw_result(path: Path) -> pd.DataFrame:
     print(f"[load_raw_result] {df.shape[0]:,} 行, {df.shape[1]} 列")
     return df
 
+def ensure_condition_column(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    元CSV側の「競争条件」列を df['競争条件'] にそろえる。
+
+    - 列名が「競走条件」など微妙に違う場合も拾う
+    - 「条件」を含む列があれば、それを公式な '競争条件' としてコピーする
+    """
+    if "競争条件" in df.columns:
+        # すでに存在していれば何もしない
+        return df
+
+    # 「条件」を含む列をゆるく探索
+    cand = [c for c in df.columns if "条件" in str(c)]
+    if cand:
+        print(f"[INFO] 条件カラムを '{cand[0]}' から '競争条件' にマッピングします")
+        df["競争条件"] = df[cand[0]]
+    else:
+        print("[WARN] '競争条件' 系の列が見つかりませんでした（条件特徴は NaN のままになります）")
+
+    return df
+
 
 def build_basic_columns(df: pd.DataFrame) -> pd.DataFrame:
     # 日付を datetime に
@@ -231,6 +252,7 @@ def add_group_jockey_stats(
 
     return df
 
+
 def get_distance_bin(x: float) -> str:
     if x < 1400:
         return "短距離"
@@ -325,6 +347,7 @@ def select_final_columns(df: pd.DataFrame) -> pd.DataFrame:
         "馬場状態1_稍重",
         "馬場状態1_良",
         "馬場状態1_重",
+        "競争条件",
     ]
 
     # 騎手（カテゴリそのまま）
@@ -383,7 +406,7 @@ def select_final_columns(df: pd.DataFrame) -> pd.DataFrame:
 ]
 
 
-    use_cols = id_cols + base_feature_cols + jockey_cols + jockey_stat_cols + agari_cols + prev_cols + target_cols
+    use_cols = id_cols + base_feature_cols + jockey_cols + jockey_stat_cols + horse_stat_cols + agari_cols + prev_cols + target_cols
 
     # 実際に存在する列だけ残す（もし何か欠けていても落ちないように）
     use_cols = [c for c in use_cols if c in df.columns]
@@ -400,12 +423,15 @@ def main() -> None:
 
     df = load_raw_result(RAW_RESULT_PATH)
 
+    df = ensure_condition_column(df)
+
     # 必要カラムがあるか軽くチェック（無ければ警告表示）
     required = [
         "レースID",
         "レース日付",
         "競馬場コード",
         "競馬場名",
+        "競争条件",
         "馬番",
         "馬名",
         "距離(m)",
@@ -436,6 +462,10 @@ def main() -> None:
     # 距離帯列
     df["距離帯"] = df["距離(m)"].apply(get_distance_bin)
 
+    # 芝ダ区分カテゴリ
+    if "芝ダ区分カテゴリ" not in df.columns:
+        df["芝ダ区分カテゴリ"] = np.where(df["芝・ダート区分_芝"], "芝", "ダート")
+
     # 騎手全体の通算
     df = add_jockey_stats(df)  # 既に実装済みのやつ
 
@@ -447,6 +477,18 @@ def main() -> None:
 
     # 芝ダ別の騎手成績（元の列名に合わせて）
     df = add_group_jockey_stats(df, ["騎手", "芝・ダート区分"], prefix="騎手芝ダ")
+
+    # 馬の通算成績
+    df = add_horse_stats(df)
+
+    # 馬 × 距離帯
+    df = add_group_horse_stats(df, ["馬名", "距離帯"], prefix="馬距離")
+
+    # 馬 × 競馬場
+    df = add_group_horse_stats(df, ["馬名", "競馬場名"], prefix="馬場")
+
+    # 馬 × 芝ダ
+    df = add_group_horse_stats(df, ["馬名", "芝ダ区分カテゴリ"], prefix="馬芝ダ")
 
 
     df_out = select_final_columns(df)
