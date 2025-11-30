@@ -112,7 +112,7 @@ def train_lightgbm_baseline(
     y_valid,
 ) -> lgb.Booster:
     # ▼ ここを追加 ▼
-    categorical_cols = [c for c in ["騎手", "前走_クラス"] if c in X_train.columns]
+    categorical_cols = [c for c in ["騎手", "前走_クラス", "競争条件"] if c in X_train.columns]
 
     for c in categorical_cols:
         X_train[c] = X_train[c].astype("category")
@@ -185,7 +185,7 @@ def save_valid_prediction(
     """
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    base_cols = id_cols + target_cols + ["単勝"]
+    base_cols = id_cols + target_cols + ["単勝", "人気", "距離(m)", "競争条件"]
 
     out_df = df_valid[base_cols].copy()
 

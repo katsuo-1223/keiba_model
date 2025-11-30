@@ -1,0 +1,59 @@
+.
+├── data
+│   ├── processed
+│   │   ├── kaggle
+│   │   └── netkeiba
+│   └── raw
+│       ├── kaggle
+│       └── netkeiba
+├── docs
+│   ├── dir_structure_20251130.txt
+│   └── progress.md
+├── main.py
+├── models
+│   └── kaggle
+│       ├── lgbm_place_baseline.txt
+│       ├── lgbm_win_baseline.txt
+│       ├── lgbm_win_prob.txt
+│       └── meta_win_model.txt
+├── notebooks
+│   └── kaggle
+│       ├── data_check.ipynb
+│       └── eda_race_result.ipynb
+├── outputs
+├── page_source.html
+├── README.md
+├── requirements.txt
+└── scripts
+    ├── kaggle
+    │   ├── analyze_ev_distribution.py
+    │   ├── analyze_roi_by_odds_and_popularity.py
+    │   ├── analyze_roi_by_segment.py
+    │   ├── attach_place_odds_and_value.py
+    │   ├── build_train_race_result_basic_with_prev.py
+    │   ├── build_training_dataset_from_race_result.py
+    │   ├── build_win_meta_dataset.py
+    │   ├── calibrate_win_prob.py
+    │   ├── eval_meta_win_value.py
+    │   ├── eval_win_value_calibrated.py
+    │   ├── eval_win_value_thresholds.py
+    │   ├── extract_jra_race_result_light.py
+    │   ├── train_lgbm_win_baseline.py
+    │   └── train_meta_win_model.py
+    └── netkeiba
+        ├── add_target_encoding.py
+        ├── build_race_master_from_jp.py
+        ├── build_race_master.py
+        ├── build_train_dataset.py
+        ├── eda_feature_importance.py
+        ├── eda_quick_summary.py
+        ├── eda_te_analysis.py
+        ├── evaluate_roi.py
+        ├── merge_results_with_master.py
+        ├── scrape_race_results.py
+        ├── scrape_race_urls.py
+        ├── summarize_horse_jockey_stats.py
+        ├── train_lightgbm_roi.py
+        └── validate_merged_dataset.py
+
+17 directories, 40 files
