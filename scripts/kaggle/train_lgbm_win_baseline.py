@@ -2,7 +2,7 @@
 """
 Kaggle JRA データを用いた LightGBM ベースライン（単勝予測）学習スクリプト。
 
-- 入力: data/processed/kaggle/train_race_result_basic.csv
+- 入力: data/processed/kaggle/train_race_result_basic_with_g1.csv
     - 先頭に ID 情報:
         レースID, レース日付, 競馬場コード, 競馬場名, 馬番, 馬名
     - 末尾に目的変数:
@@ -30,7 +30,7 @@ from sklearn.metrics import roc_auc_score, log_loss
 
 # プロジェクトルートを推定（このファイルから2つ上のディレクトリ）
 ROOT = Path(__file__).resolve().parents[2]
-INPUT_PATH = ROOT / "data" / "processed" / "kaggle" / "train_race_result_basic.csv"
+INPUT_PATH = ROOT / "data" / "processed" / "kaggle" / "train_race_result_basic_with_g1.csv"
 MODEL_DIR = ROOT / "models" / "kaggle"
 PRED_PATH = ROOT / "data" / "processed" / "kaggle" / "lgbm_win_pred.csv"
 
@@ -185,7 +185,7 @@ def save_valid_prediction(
     """
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    base_cols = id_cols + target_cols + ["単勝", "人気", "距離(m)", "競争条件"]
+    base_cols = id_cols + target_cols + ["単勝", "人気", "距離(m)", "競争条件", "g1_score"]
 
     out_df = df_valid[base_cols].copy()
 
