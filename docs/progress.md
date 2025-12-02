@@ -37,9 +37,6 @@
 - リモートのmainブランチを最新化済み  
 - `.gitignore` により `.DS_Store`, `__pycache__`, `data/raw/` などを除外
 
-以下のように、今回の進捗を追記できます👇
-`docs/progress.md` の末尾にコピペしてください。
-
 ---
 
 ## 2025-11-05_2
@@ -75,9 +72,6 @@
 * `run_batch()` により途中停止しても再開可能
 * Netkeiba側DOM変更時も詳細フォールバックで取得継続
 * `data/raw/` は `.gitignore` 対象のまま維持（軽量リポジトリ運用）
-
-以下を追記すればOKです👇
-(`docs/progress.md` の末尾にコピペしてください)
 
 ---
 
@@ -439,3 +433,26 @@ python scripts/eda_quick_summary.py
   「G1プロファイルモデル＋メタ学習＋時系列評価」まで実装・検証したプロセス自体が  
   データサイエンティストとして強いポートフォリオになる前提で進める。
 
+## 2025-12-02
+
+**Done**
+- g1_score_splitA（時点版G1プロファイル）の構築完了  
+- train_race_result_with_g1_splitA.csv を生成  
+- g1_score を除外した train_race_result_without_g1_splitA.csv を生成  
+- 時系列バックテスト（SplitA）を完全実行  
+- threshold = 1.0 / 1.5 / 2.0 / 2.5 × g1_score有無 の ROI を取得  
+- 期待値しきい値戦略の限界を確認  
+- g1_score_splitA 有無の性能差がほぼゼロであることを確認  
+- 市場（単勝オッズ）の効率性が高く、モデルでは超えにくいことを確認  
+- timeseries_backtest_win のラップスクリプトを作成（run_threshold_grid_splitA.py）
+
+**Next**
+- threshold × ROI × use_g1_splitA の結果を図と文章でまとめる  
+- 競馬AIモデルの最終レポート（ブログ & GitHub）を作成  
+- README / result ドキュメントの整理  
+- プロジェクト締め（成果物化）
+
+**Notes**
+- 本日の実験により、リーク除去後のモデルは ROI を安定して改善しないことが分かった  
+- 1st と meta の二段構成の役割差が明瞭になり、実務に近い学びを得られた  
+- 時点整合性（未来情報を含めない設計）が本質的に重要であることが再確認された  
