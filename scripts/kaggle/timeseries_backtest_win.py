@@ -24,12 +24,15 @@ Kaggle JRA 単勝モデルの「時系列バックテスト」スクリプト。
 - 出力:
     outputs/kaggle/roi_timeseries_summary.csv
         split, model, roi, hit_rate, bets, returns
+
+    ★ 追加:
+        outputs/kaggle/trades_{split}_{model}_thr{threshold}.csv
+        outputs/kaggle/monthly_roi_{split}_{model}_thr{threshold}.csv
 """
 
 from __future__ import annotations
 
 import argparse
-import os
 from pathlib import Path
 from typing import List, Tuple
 
@@ -48,7 +51,7 @@ OUTPUT_DIR_DEFAULT = ROOT / "outputs" / "kaggle"
 
 
 # ===============================
-# データロード & 特徴量マトリクス
+# データロード
 # ===============================
 def load_data(path: Path) -> pd.DataFrame:
     if not path.exists():
@@ -57,6 +60,58 @@ def load_data(path: Path) -> pd.DataFrame:
     return df
 
 
+# ===============================
+# トレード明細 + 月次ROI保存ユーティリティ
+# ===============================
+def save_trades_and_monthly_roi(
+    trades_df: pd.DataFrame,
+    output_dir: Path,
+    split_name: str,
+    model_name: str,
+    threshold: float,
+) -> None:
+    """
+    - trades_df: ベットした行だけを含む DataFrame
+      必須列: レース日付, target_win, 単勝
+    """
+    df = trades_df.copy()
+    df["レース日付"] = pd.to_datetime(df["レース日付"])
+
+    # 払い戻し（1点100円購入）
+    df["payout"] = np.where(df["target_win"] == 1, df["単勝"] * 100.0, 0.0)
+
+    # トレード明細を保存
+    trade_path = (
+        output_dir
+        / f"trades_{split_name}_{model_name}_thr{threshold:.1f}.csv"
+    )
+    trade_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(trade_path, index=False)
+    print(f"[LOG] trades saved to: {trade_path}")
+
+    # 月次ROI集計
+    df["month"] = df["レース日付"].dt.to_period("M")
+    monthly = (
+        df.groupby("month")
+        .agg(
+            bets=("payout", "size"),
+            returns=("payout", "sum"),
+        )
+        .reset_index()
+    )
+    monthly["roi"] = monthly["returns"] / (monthly["bets"] * 100.0)
+
+    monthly_path = (
+        output_dir
+        / f"monthly_roi_{split_name}_{model_name}_thr{threshold:.1f}.csv"
+    )
+    monthly.to_csv(monthly_path, index=False)
+    print(f"[LOG] monthly ROI saved to: {monthly_path}")
+
+
+# ===============================
+# 特徴量マトリクス
+# ===============================
 def build_feature_matrix(
     df: pd.DataFrame,
     id_cols: List[str],
@@ -76,7 +131,7 @@ def build_feature_matrix(
         "上がり3F",      # レースのラスト3Fタイム（結果）
         "上がり順位",    # そのレース内での上がり順位（結果）
         "通過4角",       # 4コーナー通過順（結果）
-        "g1_score",  # ★ 元の生涯版 g1_score はリーク扱いとして除外
+        "g1_score",      # ★ 元の生涯版 g1_score はリーク扱いとして除外
     ]
 
     feature_cols = [
@@ -209,7 +264,10 @@ def compute_roi_ev_threshold(
 
     bets = len(bet_df)
     # 的中時はオッズ分の払い戻し（100円単位はここではスケーリングしない）
-    returns = bet_df.apply(lambda r: r[odds_col] if r[hit_col] == 1 else 0.0, axis=1).sum()
+    returns = bet_df.apply(
+        lambda r: r[odds_col] if r[hit_col] == 1 else 0.0,
+        axis=1
+    ).sum()
 
     roi = (returns - bets) / bets
     hit_rate = bet_df[hit_col].mean()
@@ -315,6 +373,19 @@ def main():
         print(f"[1st] ROI={roi1:.3f}, hit_rate={hit1:.3f}, bets={bet1}, returns={ret1:.1f}")
         results.append([split_name, "1st_stage", roi1, hit1, bet1, ret1])
 
+        # ★ 1st のトレード明細 + 月次ROIを保存
+        test_df_1st = test_df.copy()
+        test_df_1st["ev_1st"] = test_df_1st["p_win_calib"] * test_df_1st["単勝"]
+        trades_1st = test_df_1st[test_df_1st["ev_1st"] >= args.threshold].copy()
+        if len(trades_1st) > 0:
+            save_trades_and_monthly_roi(
+                trades_df=trades_1st,
+                output_dir=output_dir,
+                split_name=split_name,
+                model_name="1st_stage",
+                threshold=args.threshold,
+            )
+
         # ---------- メタモデル用データセット ----------
         print("[meta] データセット構築")
         train_meta = train_df.copy()
@@ -333,8 +404,6 @@ def main():
             "人気",
             "距離(m)",
             "g1_score",
-            # "競争条件",
-            # "騎手",
         ]
         meta_features = [c for c in meta_feature_candidates if c in train_meta.columns]
 
@@ -343,12 +412,6 @@ def main():
 
         X_meta_test = test_meta[meta_features].copy()
         y_meta_test = test_meta["hit"].astype(int)
-
-        # ★ ここで train / test 両方のカテゴリ列を揃える
-        # categorical_cols = [c for c in ["騎手", "前走_クラス", "競争条件"] if c in X_meta_train.columns]
-        # for c in categorical_cols:
-        #     X_meta_train[c] = X_meta_train[c].astype("category")
-        #     X_meta_test[c] = X_meta_test[c].astype("category")
 
         meta_model = train_meta_model(X_meta_train, y_meta_train)
 
@@ -368,6 +431,19 @@ def main():
         )
         print(f"[meta] ROI={roi2:.3f}, hit_rate={hit2:.3f}, bets={bet2}, returns={ret2:.1f}")
         results.append([split_name, "meta", roi2, hit2, bet2, ret2])
+
+        # ★ meta のトレード明細 + 月次ROIを保存
+        test_meta_ev = test_meta.copy()
+        test_meta_ev["ev_meta"] = test_meta_ev["meta_prob"] * test_meta_ev["単勝"]
+        trades_meta = test_meta_ev[test_meta_ev["ev_meta"] >= args.threshold].copy()
+        if len(trades_meta) > 0:
+            save_trades_and_monthly_roi(
+                trades_df=trades_meta,
+                output_dir=output_dir,
+                split_name=split_name,
+                model_name="meta",
+                threshold=args.threshold,
+            )
 
     # 結果を CSV に保存
     result_df = pd.DataFrame(
